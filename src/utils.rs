@@ -13,6 +13,7 @@ use libflate::deflate::{Decoder, Encoder};
 use log::error;
 use regex::Regex;
 use revision::revisioned;
+use crate::redgifs;
 use rust_embed::RustEmbed;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value;
@@ -194,8 +195,11 @@ impl Media {
 		let secure_media = &data["secure_media"]["reddit_video"];
 		let crosspost_parent_media = &data["crosspost_parent_list"][0]["secure_media"]["reddit_video"];
 
-		// If post is a video, return the video
-		let (post_type, url_val, alt_url_val) = if data_preview["fallback_url"].is_string() {
+		// Check RedGifs FIRST before Reddit's cached fallback videos, then other video sources
+		let domain = data["domain"].as_str().unwrap_or_default();
+		let (post_type, url_val, alt_url_val) = if redgifs::is_redgifs_domain(domain) {
+			("video", &data["url"], None)
+		} else if data_preview["fallback_url"].is_string() {
 			(
 				if data_preview["is_gif"].as_bool().unwrap_or(false) { "gif" } else { "video" },
 				&data_preview["fallback_url"],
@@ -1017,6 +1021,7 @@ static REGEX_URL_PREVIEW: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"https?
 static REGEX_URL_EXTERNAL_PREVIEW: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"https?://external\-preview\.redd\.it/(.*)").unwrap());
 static REGEX_URL_STYLES: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"https?://styles\.redditmedia\.com/(.*)").unwrap());
 static REGEX_URL_STATIC_MEDIA: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"https?://www\.redditstatic\.com/(.*)").unwrap());
+static REGEX_URL_REDGIFS: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"https?://(?:www\.|v\d+\.)?redgifs\.com/watch/([^?#]*)").unwrap());
 
 /// Direct urls to proxy if proxy is enabled
 pub fn format_url(url: &str) -> String {
@@ -1069,6 +1074,9 @@ pub fn format_url(url: &str) -> String {
 				"external-preview.redd.it" => capture(&REGEX_URL_EXTERNAL_PREVIEW, "/preview/external-pre/", 1),
 				"styles.redditmedia.com" => capture(&REGEX_URL_STYLES, "/style/", 1),
 				"www.redditstatic.com" => capture(&REGEX_URL_STATIC_MEDIA, "/static/", 1),
+				"www.redgifs.com" => capture(&REGEX_URL_REDGIFS, "/redgifs/", 1),
+				"redgifs.com" => capture(&REGEX_URL_REDGIFS, "/redgifs/", 1),
+				d if d.starts_with("v") && d.ends_with(".redgifs.com") => capture(&REGEX_URL_REDGIFS, "/redgifs/", 1),
 				_ => url.to_string(),
 			}
 		})
@@ -1433,18 +1441,23 @@ pub fn url_path_basename(path: &str) -> String {
 	}
 }
 
-/// Returns the URL of a post, as needed by RSS feeds
+/// Returns the absolute URL of a post, as needed by RSS feeds
 pub fn get_post_url(post: &Post) -> String {
-	if let Some(out_url) = &post.out_url {
-		// Handle cross post
-		if out_url.starts_with("/r/") {
-			format!("{}{}", config::get_setting("REDLIB_FULL_URL").unwrap_or_default(), out_url)
-		} else {
-			out_url.to_string()
-		}
-	} else {
-		format!("{}{}", config::get_setting("REDLIB_FULL_URL").unwrap_or_default(), post.permalink)
+	match post.post_type.as_str() {
+		"image" | "gallery" | "gif" | "video" => return to_absolute_url(&post.permalink),
+		_ => {}
 	}
+
+	if let Some(out_url) = &post.out_url {
+		return if out_url.starts_with("/r/") { to_absolute_url(out_url) } else { out_url.clone() };
+	}
+
+	to_absolute_url(&post.permalink)
+}
+
+/// Returns an absolute URL given a relative URL, as needed by RSS feeds
+pub fn to_absolute_url(relative_path: &str) -> String {
+	format!("{}{}", config::get_setting("REDLIB_FULL_URL").unwrap_or_default(), relative_path)
 }
 
 #[cfg(test)]
