@@ -561,6 +561,10 @@ aside {
     cursor: pointer;
 }
 
+.copy,
+.import {
+    margin: 5px;
+}
 .subscribe,
 .filter,
 .copy,
@@ -1847,6 +1851,14 @@ th {
 table {
     border-width: 3px;
     border-spacing: 0;
+}
+
+th {
+    white-space: nowrap;
+}
+
+td {
+    word-wrap: break-word;
 }
 
 td,
