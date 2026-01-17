@@ -569,7 +569,7 @@ async fn subreddit(sub: &str, quarantined: bool) -> Result<Subreddit, String> {
 
 	// Metadata regarding the subreddit
 	let members: i64 = res["data"]["subscribers"].as_u64().unwrap_or_default() as i64;
-	let active: i64 = res["data"]["accounts_active"].as_u64().unwrap_or_default() as i64;
+	let active: i64 = res["data"]["accounts_active"].as_u64().unwrap_or_default() as i64; // TODO: does not work
 
 	// Fetch subreddit icon either from the community_icon or icon_img value
 	let community_icon: &str = res["data"]["community_icon"].as_str().unwrap_or_default();
